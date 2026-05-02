@@ -1,16 +1,10 @@
-# Compiled Object files
+# Build outputs
+build/
+*.out
+*.exe
 *.o
 *.obj
-
-# Executables
-*.exe
-*.out
-a.out
-
-# Build folders
-build/
-cmake-build-debug/
-cmake-build-release/
+*.a
 
 # macOS
 .DS_Store
@@ -20,3 +14,18 @@ cmake-build-release/
 
 # Logs
 *.log
+
+# Temporary files
+*.tmp
+*.swp
+
+# CMake (if added later)
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Xcode/macOS build files
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
