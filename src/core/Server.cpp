@@ -29,7 +29,8 @@ void Server::setupSocket()
 {
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
 
-    if (server_fd < 0) {
+    if (server_fd < 0)
+    {
         perror("socket");
         exit(1);
     }
@@ -43,14 +44,16 @@ void Server::setupSocket()
     server_addr.sin_port = htons(port);
 
     if (bind(server_fd,
-             (sockaddr*)&server_addr,
-             sizeof(server_addr)) < 0) {
+             (sockaddr *)&server_addr,
+             sizeof(server_addr)) < 0)
+    {
 
         perror("bind");
         exit(1);
     }
 
-    if (listen(server_fd, 10) < 0) {
+    if (listen(server_fd, 10) < 0)
+    {
         perror("listen");
         exit(1);
     }
@@ -68,7 +71,8 @@ void Server::setupKqueue()
 {
     kq = kqueue();
 
-    if (kq == -1) {
+    if (kq == -1)
+    {
         perror("kqueue");
         exit(1);
     }
@@ -97,7 +101,8 @@ void Server::setupKqueue()
 
 void Server::run()
 {
-    while (true) {
+    while (true)
+    {
 
         int nev = kevent(kq,
                          NULL,
@@ -106,27 +111,32 @@ void Server::run()
                          MAX_EVENTS,
                          NULL);
 
-        if (nev < 0) {
+        if (nev < 0)
+        {
             perror("kevent");
             continue;
         }
 
-        for (int i = 0; i < nev; i++) {
+        for (int i = 0; i < nev; i++)
+        {
 
             int fd = events[i].ident;
 
             // ---------- New Connection ----------
-            if (fd == server_fd) {
+            if (fd == server_fd)
+            {
                 acceptClient();
             }
 
             // ---------- Writable Socket ----------
-            else if (events[i].filter == EVFILT_WRITE) {
+            else if (events[i].filter == EVFILT_WRITE)
+            {
                 handleWriteEvent(fd);
             }
 
             // ---------- Readable Socket ----------
-            else {
+            else
+            {
                 handleReadEvent(fd);
             }
         }
@@ -184,7 +194,8 @@ void Server::handleReadEvent(int fd)
                      0);
 
     // ---------- Disconnect ----------
-    if (bytes <= 0) {
+    if (bytes <= 0)
+    {
         disconnectClient(fd);
         return;
     }
@@ -195,16 +206,32 @@ void Server::handleReadEvent(int fd)
     // ---------- Extract Complete Messages ----------
     auto messages =
         Protocol::extractMessages(
-            clients[fd].inputBuffer
-        );
+            clients[fd].inputBuffer);
 
-    for (const auto& message : messages) {
+    for (const auto &message : messages)
+    {
 
+        if (message.rfind("/name ", 0) == 0)
+        {
+
+            std::string new_name =
+                message.substr(6);
+
+            clients[fd].username = new_name;
+
+            std::cout << "Client renamed to "
+                      << new_name
+                      << "\n";
+
+            continue;
+        }
         std::cout << "Message: "
                   << message
                   << "\n";
+        std::string formatted =
+            "[" + clients[fd].username + "]: " + message;
 
-        broadcastMessage(fd, message);
+        broadcastMessage(fd, formatted);
     }
 }
 
@@ -214,22 +241,25 @@ void Server::handleReadEvent(int fd)
 
 void Server::handleWriteEvent(int fd)
 {
-    Connection& conn = clients[fd];
+    Connection &conn = clients[fd];
 
-    if (!conn.outputBuffer.empty()) {
+    if (!conn.outputBuffer.empty())
+    {
 
         int sent = send(fd,
                         conn.outputBuffer.data(),
                         conn.outputBuffer.size(),
                         0);
 
-        if (sent > 0) {
+        if (sent > 0)
+        {
             conn.outputBuffer.erase(0, sent);
         }
     }
 
     // ---------- Fully Sent ----------
-    if (conn.outputBuffer.empty()) {
+    if (conn.outputBuffer.empty())
+    {
 
         struct kevent disable_event;
 
@@ -255,9 +285,10 @@ void Server::handleWriteEvent(int fd)
 // =====================================================
 
 void Server::broadcastMessage(int sender_fd,
-                              const std::string& message)
+                              const std::string &message)
 {
-    for (auto& [client_fd, connection] : clients) {
+    for (auto &[client_fd, connection] : clients)
+    {
 
         if (client_fd == sender_fd)
             continue;
@@ -265,8 +296,7 @@ void Server::broadcastMessage(int sender_fd,
         // ---------- Serialize Message ----------
         Protocol::appendMessage(
             connection.outputBuffer,
-            message
-        );
+            message);
 
         // ---------- Enable WRITE Event ----------
         struct kevent write_event;
