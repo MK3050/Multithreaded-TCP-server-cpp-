@@ -1,295 +1,238 @@
-# Multithreaded TCP Server in C++
+# Multithreaded TCP Chat Server in C++
 
-A low-level networking project built in C++ to explore how real-world servers handle multiple clients concurrently using different I/O and concurrency models.
+> Scalable TCP chat server built from scratch in C++ using BSD sockets and an event-driven architecture with kqueue — a deep systems programming exercise in how real networking servers work internally.
 
-This project gradually evolves from a basic blocking TCP server into scalable server architectures using:
-
-* Thread-per-client model
-* `select()` based I/O multiplexing
-* `kqueue()` event-driven architecture
-
-The goal of this project is to deeply understand operating system level networking concepts, socket programming, concurrency, and scalable server design.
+![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)
+![Platform](https://img.shields.io/badge/platform-macOS%20%2F%20BSD-orange)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
-# Features
+## Overview
 
-## Implemented
-
-* TCP socket communication
-* Multiple client support
-* Thread-per-client server
-* Client broadcasting
-* `select()` based server
-* `kqueue()` based server
-* Dynamic client management
-* Graceful client disconnection handling
-* Basic message forwarding
+This project was built as a deep systems programming exercise to understand how real networking servers work internally. The final implementation uses kqueue with non-blocking sockets for a scalable, single-threaded, event-driven design.
 
 ---
 
-# Project Structure
+## Project Evolution
 
-```text
-Multithreaded-TCP-Server/
-│
-├── README.md
-├── .gitignore
-│
-├── src/
-│   ├── client.cpp
-│   ├── thread_server.cpp
-│   ├── select_server.cpp
-│   └── kqueue_server.cpp
-│
-├── build/
-├── docs/
-└── screenshots/
+The server was built iteratively across three stages, each addressing the scalability limitations of the previous approach:
+
+| Stage | Approach | Notes |
+|-------|----------|-------|
+| 1 | Thread-per-client | Simple but doesn't scale |
+| 2 | `select()`-based | Better, but limited by `fd_set` size |
+| **3** | **kqueue event-driven** | **Current — scalable, non-blocking** |
+
+---
+
+## Architecture
+
+```
+Client(s)
+    ↓
+TCP Socket
+    ↓
+kqueue Event Loop
+    ↓
+Connection Management
+    ↓
+Protocol Parsing
+    ↓
+Broadcast System
 ```
 
 ---
 
-# Concepts Covered
+## Features
 
-## 1. Socket Programming
-
-The project uses BSD sockets in C++.
-
-Core APIs used:
-
-* `socket()`
-* `bind()`
-* `listen()`
-* `accept()`
-* `send()`
-* `recv()`
-* `close()`
-
-These system calls form the foundation of TCP networking on Unix-like systems.
+- TCP socket programming using BSD sockets
+- Non-blocking sockets (`fcntl` + `O_NONBLOCK`)
+- Event-driven architecture using kqueue
+- Multiple concurrent clients
+- Length-prefixed message framing
+- Incremental stream parsing
+- Per-connection input/output buffers
+- Backpressure-aware non-blocking writes
+- Username support (`/name` command)
+- Modular server architecture
 
 ---
 
-## 2. Thread-Per-Client Architecture
+## Key Networking Concepts
 
-In the first implementation, every new client connection gets its own thread.
+### TCP Is a Byte Stream
 
-### Flow
+TCP does not preserve message boundaries. A single `send()` may arrive as:
 
-```text
-Client connects
-      ↓
-accept()
-      ↓
-Create thread
-      ↓
-Thread handles recv/send for that client
+- Multiple `recv()` calls
+- Partial data
+- Merged messages
+
+This project solves that using length-prefixed framing.
+
+### Message Framing
+
+Every message sent over the wire follows this format:
+
 ```
-
-### Advantages
-
-* Easy to understand
-* Simple logic
-* Good for learning concurrency
-
-### Limitations
-
-* High memory usage
-* Context switching overhead
-* Does not scale well for thousands of clients
-
----
-
-# 3. select() Based Server
-
-The second implementation removes the need for one thread per client.
-
-Instead of blocking on a single client, the server watches multiple sockets simultaneously using `select()`.
-
-### Flow
-
-```text
-Store all sockets in fd_set
-        ↓
-select() waits for activity
-        ↓
-Process only ready sockets
+[length][message body]
 ```
-
-### Advantages
-
-* Single-threaded concurrency
-* Lower resource usage
-* Better scalability than thread-per-client
-
-### Limitations
-
-* Limited by file descriptor count
-* Scans all descriptors every loop
-* Performance degrades with large numbers of clients
-
----
-
-# 4. kqueue() Event-Driven Server
-
-The final implementation uses `kqueue()`, a scalable event notification system available on BSD/macOS.
-
-Unlike `select()`, `kqueue()` only returns active events instead of scanning every socket.
-
-### Flow
-
-```text
-Register socket events with kqueue
-             ↓
-Kernel monitors sockets
-             ↓
-Receive only active events
-             ↓
-Handle client activity
-```
-
-### Advantages
-
-* Highly scalable
-* Efficient event handling
-* Used in production-grade systems
-* Handles large numbers of connections efficiently
-
-### Why kqueue is Better than select
-
-| Feature             | select()        | kqueue()     |
-| ------------------- | --------------- | ------------ |
-| Scalability         | Limited         | High         |
-| Descriptor Scanning | O(n)            | Event-driven |
-| Performance         | Slower at scale | Efficient    |
-| Kernel Support      | Older           | Modern       |
-
----
-
-# How to Build
-
-## Compile Thread Server
-
-```bash
-g++ src/thread_server.cpp -o build/thread_server -pthread
-```
-
-## Compile select() Server
-
-```bash
-g++ src/select_server.cpp -o build/select_server
-```
-
-## Compile kqueue() Server
-
-```bash
-g++ src/kqueue_server.cpp -o build/kqueue_server
-```
-
-## Compile Client
-
-```bash
-g++ src/client.cpp -o build/client -pthread
-```
-
----
-
-# Running the Project
-
-## Start Server
 
 Example:
 
-```bash
-./build/thread_server
+```
+[0005]hello
 ```
 
-or
+This allows the server to reconstruct complete messages regardless of how TCP splits them.
 
-```bash
-./build/select_server
+### Non-Blocking I/O
+
+All sockets are configured using:
+
+```cpp
+fcntl(fd, F_SETFL, O_NONBLOCK)
 ```
 
-or
+The server never blocks waiting for a client.
 
-```bash
-./build/kqueue_server
+### Event-Driven Design
+
+The server uses `kqueue` to monitor:
+
+- Readable sockets
+- Writable sockets
+- New connections
+
+This allows a single thread to efficiently handle many clients.
+
+### Backpressure Handling
+
+Non-blocking `send()` may only transmit partial data. To handle this:
+
+- Each client has a dedicated output buffer
+- Unsent data remains queued
+- `EVFILT_WRITE` notifications resume sending when the socket is ready
+
+---
+
+## Folder Structure
+
+```
+src/
+├── client/
+│   └── client.cpp
+│
+├── server/
+│   └── main.cpp
+│
+├── common/
+│   ├── protocol.cpp
+│   ├── protocol.hpp
+│   ├── socket_utils.cpp
+│   └── socket_utils.hpp
+│
+└── core/
+    ├── Connection.cpp
+    ├── Connection.hpp
+    ├── Server.cpp
+    └── Server.hpp
 ```
 
-## Start Client
+---
 
-Open multiple terminals:
+## Build & Run
+
+### Create build directory
+
+```bash
+mkdir build
+```
+
+### Build server
+
+```bash
+make server
+```
+
+### Build client
+
+```bash
+make client
+```
+
+### Start server
+
+```bash
+./build/server
+```
+
+### Run client
 
 ```bash
 ./build/client
 ```
 
+Open multiple client terminals to test chat broadcasting.
+
 ---
 
-# Example Workflow
+## Username & Chat
 
-```text
-Client A sends message
-          ↓
-Server receives message
-          ↓
-Server broadcasts to all connected clients
-          ↓
-Other clients receive the message
+Set your username:
+
+```
+/name alice
+```
+
+Messages will appear as:
+
+```
+[alice]: hello everyone
+[bob]: hey alice!
 ```
 
 ---
 
-# Learning Outcomes
+## Technologies
 
-This project helped explore:
-
-* Operating system networking fundamentals
-* Concurrent programming
-* Blocking vs non-blocking I/O
-* Event-driven architecture
-* Scalability tradeoffs
-* TCP communication internals
-* Kernel event notification systems
-
----
-
-# Future Improvements
-
-Possible future enhancements:
-
-* Non-blocking sockets
-* epoll() implementation for Linux
-* Custom message protocol
-* Authentication system
-* Private messaging
-* Chat rooms
-* File transfer
-* TLS/SSL encryption
-* Thread pool architecture
-* Async logging
-* Load testing
+| Technology | Role |
+|------------|------|
+| C++17 | Language |
+| BSD sockets | Raw TCP networking |
+| kqueue | Kernel I/O multiplexing |
+| POSIX APIs | System-level calls |
+| Non-blocking I/O | Scalable connection handling |
+| Message framing | Reliable protocol over TCP streams |
 
 ---
 
-# Technologies Used
+## Future Improvements
 
-* C++
-* POSIX Sockets
-* Threads (`std::thread`)
-* select()
-* kqueue()
-* macOS/BSD networking APIs
+- [ ] Chat rooms
+- [ ] Private messaging
+- [ ] Authentication
+- [ ] TLS encryption
+- [ ] Logging system
+- [ ] Graceful shutdown
+- [ ] Configuration files
+- [ ] Benchmarks / load testing
 
 ---
 
-# Why This Project Matters
+## Learning Goals
 
-This project demonstrates understanding of:
+This project was built not just to create a chat server, but to deeply understand:
 
-* Systems programming
-* Low-level networking
-* Concurrent server design
-* Event-driven architectures
-* OS-level I/O mechanisms
+- How TCP works internally
+- Why message framing is required
+- How scalable event-driven servers are designed
+- How real systems handle partial reads and writes
+- The tradeoffs between threads and event loops
 
-It is designed as a learning-focused systems project that gradually builds from simple socket communication to scalable server architectures.
+---
+
+## License
+
+MIT License — free to use, modify, and distribute.
